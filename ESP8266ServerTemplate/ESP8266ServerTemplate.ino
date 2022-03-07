@@ -20,8 +20,8 @@
 #include <stdio.h>
 
 #ifndef STASSID
-#define STASSID "lishiyuan"
-#define STAPSK  "761834925"
+#define STASSID "HUAWEI0260W"
+#define STAPSK  "HUAWEI666"
 #endif	
 
 #define PORT 25523
@@ -43,7 +43,6 @@ void FlushDisplay(char** lines, int count);
 void SetupWiFi();
 
 #pragma endregion
-
 #pragma region DFS
 
 #define DW(p,v) digitalWrite(p,v)
@@ -55,8 +54,7 @@ void SetupWiFi();
 #define PM(p,m) pinMode(p,m)
 
 #pragma endregion
-
-
+////60
 #pragma region Lines
 typedef struct _Lines
 {
@@ -98,8 +96,18 @@ void U8g2Println(const char*l)
 }
 
 #pragma endregion
+#pragma region DAC
 
 
+#include <Adafruit_MCP4725.h>
+
+Adafruit_MCP4725 dac;
+
+void SetupDAC() {
+	dac.begin(0x60);
+}
+
+#pragma endregion
 void SoftAPInit()
 {
 	/// <summary>
@@ -122,40 +130,67 @@ void SoftAPInit()
 	/// </summary>
 }
 
+////////
+const uint8_t TrigPin = D5; //发出超声波
+const uint8_t EchoPin = D6; //收到反射回来的超声波
+double cm; //因为测得的距离是浮点型的
+////////
+
 void setup() {
 	Serial.begin(SERIAL_BAUD);
 	SetupU8g2();
-	//SetupWiFi();
-	SoftAPInit();
+	SetupWiFi();
+	//SoftAPInit();
+	//SetupDAC();
 	PM(D4, OUTPUT);
+	DW(D4, LOW);
+
+	while (WiFi.status() != WL_CONNECTED)
+	{
+		delay(10);
+	}
 	DW(D4, HIGH);
-	
 
-
+	U8g2Println("Connected.");
 	strcpy(IPStr, WiFi.localIP().toString().c_str());
-
+	U8g2Println(IPStr);
 	Server.begin();
-
+	PM(TrigPin, OUTPUT);
+	PM(EchoPin, INPUT);
 }
-int xxb = 0;
+
+
 void loop() {
-	xxb++;
-	char bb[10];
-	itoa(xxb, bb, 10);
-	Serial.println(bb);
-	U8g2Println(bb);
 	if (!Client.connected()) {
-		digitalWrite(D4, LOW);
 		if (Server.hasClient())
 		{
 			Client = Server.available();
-			digitalWrite(D4, HIGH);
+			U8g2Println("Connected.");
+			U8g2Println(Client.remoteIP().toString().c_str());
 		}
 		else
 			return;
 	}
-	String dd = Client.readStringUntil('\0');
-	Client.println("OK");
+	char Data[256];
+	int cc = Client.readBytesUntil('\n', Data, 256);
+	Data[cc] = '\0';
+	
+	if (strcmp(Data, "get") == 0)
+	{
+		digitalWrite(TrigPin, LOW); //低高低电平发一个短时间脉冲去TrigPin 
+		delayMicroseconds(2);       // delayMicroseconds在更小的时间内延时准确
+		digitalWrite(TrigPin, HIGH);
+		delayMicroseconds(10);
+		digitalWrite(TrigPin, LOW); //通过这里控制超声波的发射
+
+		cm = pulseIn(EchoPin, HIGH) / 58.0; //将回波时间换算成cm 
+		cm = (long(cm * 100.0)) / 100.0; //保留两位小数 
+		
+		Client.write((char*)&cm, sizeof(double));
+		return;
+	}
+
+	Client.write((char*)&cm, sizeof(double));
 }
 
 
